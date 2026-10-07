@@ -1,0 +1,194 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String   @id @db.Uuid
+  email        String   @unique
+  name         String
+  agencyName   String   @map("agency_name")
+  telephone    String
+  role         String   @default("agency")
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  tenants       Tenant[]
+  payments      Payment[]
+  subscription  Subscription?
+  settings      AgencySetting?
+  notifications Notification[]
+  activities    AgencyActivity[]
+  reminders     Reminder[]
+
+  @@map("users")
+}
+
+model Tenant {
+  id              String   @id @db.Uuid
+  agencyId        String   @map("agency_id") @db.Uuid
+  name            String
+  email           String
+  phone           String
+  phoneNormalized String   @map("phone_normalized")
+  property        String
+  rentVal         Decimal  @map("rent_val") @db.Decimal(14, 0)
+  status          String   @default("pending")
+  delayDays       Int      @default(0) @map("delay_days")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  agency    User       @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  payments  Payment[]
+  reminders Reminder[]
+
+  @@unique([agencyId, email])
+  @@unique([agencyId, phoneNormalized])
+  @@index([agencyId, status])
+  @@map("tenants")
+}
+
+model Payment {
+  id             String   @id @db.Uuid
+  agencyId       String   @map("agency_id") @db.Uuid
+  tenantId       String?  @map("tenant_id") @db.Uuid
+  locataire      String
+  property       String?
+  montant        Decimal  @db.Decimal(14, 0)
+  moyenPaiement  String   @map("moyen_paiement")
+  date           DateTime @default(now()) @db.Timestamptz(6)
+  statut         String   @default("reussi")
+  reference      String?  @unique
+  billingPeriod  String?  @map("billing_period")
+  subtitle       String?
+
+  agency User   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, billingPeriod])
+  @@index([agencyId, date(sort: Desc)])
+  @@map("payments")
+}
+
+model Subscription {
+  id                 String   @id @db.Uuid
+  agencyId           String   @unique @map("agency_id") @db.Uuid
+  planId             String   @default("starter") @map("plan_id")
+  planName           String   @default("Starter (50 locataires)") @map("plan_name")
+  price              Int      @default(15000)
+  maxTenants         Int      @default(50) @map("max_tenants")
+  status             String   @default("trial")
+  isTrial            Boolean  @default(true) @map("is_trial")
+  trialStartedAt     DateTime @default(now()) @map("trial_started_at") @db.Timestamptz(6)
+  trialExpiresAt     DateTime @map("trial_expires_at") @db.Timestamptz(6)
+  trialAlreadyUsed   Boolean  @default(false) @map("trial_already_used")
+  lastPaymentDate    DateTime? @map("last_payment_date") @db.Timestamptz(6)
+  nextBillingDate    DateTime? @map("next_billing_date") @db.Timestamptz(6)
+  periodEndsAt       DateTime? @map("period_ends_at") @db.Timestamptz(6)
+  paymentMethod      String?  @map("payment_method")
+  transactionRef     String?  @map("transaction_ref")
+  autoRenew          Boolean  @default(true) @map("auto_renew")
+  monthlyRenewalDue  Boolean  @default(false) @map("monthly_renewal_due")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  agency   User                @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  invoices SubscriptionInvoice[]
+
+  @@map("subscriptions")
+}
+
+model SubscriptionInvoice {
+  id             String   @id
+  subscriptionId String   @map("subscription_id") @db.Uuid
+  month          String
+  amount         Int
+  date           DateTime @default(now()) @db.Timestamptz(6)
+  paymentMethod  String   @map("payment_method")
+  reference      String   @unique
+  status         String   @default("paid")
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId, date(sort: Desc)])
+  @@map("subscription_invoices")
+}
+
+model AgencySetting {
+  id                 String  @id @db.Uuid
+  agencyId           String  @unique @map("agency_id") @db.Uuid
+  administrativeEmail String @map("administrative_email")
+  address            String  @default("")
+  ninea              String  @default("")
+  waveActive         Boolean @default(true) @map("wave_active")
+  orangeMoneyActive  Boolean @default(true) @map("orange_money_active")
+  feeBearer          String  @default("agency") @map("fee_bearer")
+  remindJMinus3       Boolean @default(true) @map("remind_j_minus_3")
+  remindJDay          Boolean @default(true) @map("remind_j_day")
+  remindJPlus3        Boolean @default(true) @map("remind_j_plus_3")
+  remindLanguage      String  @default("bilingual") @map("remind_language")
+  rentDueDay          Int     @default(5) @map("rent_due_day")
+  twoFactorEnabled    Boolean @default(false) @map("two_factor_enabled")
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  agency User @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@map("agency_settings")
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  agencyId    String   @map("agency_id") @db.Uuid
+  type        String
+  title       String
+  description String
+  message     String
+  priority    String   @default("normal")
+  isRead      Boolean  @default(false) @map("is_read")
+  details     Json     @default("{}") @db.JsonB
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  agency User @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@index([agencyId, createdAt(sort: Desc)])
+  @@index([agencyId, isRead])
+  @@map("notifications")
+}
+
+model AgencyActivity {
+  id          String   @id @default(cuid())
+  agencyId    String   @map("agency_id") @db.Uuid
+  type        String
+  title       String
+  description String
+  amount      String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  agency User @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  @@index([agencyId, createdAt(sort: Desc)])
+  @@map("agency_activities")
+}
+
+model Reminder {
+  id          String   @id @db.Uuid
+  agencyId    String   @map("agency_id") @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  channel     String   @default("whatsapp")
+  reminderKind String  @default("manual") @map("reminder_kind")
+  dedupeKey   String?  @unique @map("dedupe_key")
+  attempts    Int      @default(0)
+  status      String   @default("prepared")
+  phone       String
+  message     String
+  paymentUrl  String   @map("payment_url")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  agency User   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([agencyId, createdAt(sort: Desc)])
+  @@map("reminders")
+}
